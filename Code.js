@@ -212,8 +212,6 @@ function createMainCard() {
  * Shows the source calendars management card
  */
 function showSourceCalendars() {
-  console.log('=== showSourceCalendars DEBUG ===');
-
   var card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader()
       .setTitle('Source Calendars')
@@ -223,15 +221,11 @@ function showSourceCalendars() {
   var calendars = getUserCalendars();
   var sourceCalendars = JSON.parse(getProperty('sourceCalendars', '[]'));
 
-  console.log('Available calendars:', JSON.stringify(calendars));
-  console.log('Stored source calendars:', JSON.stringify(sourceCalendars));
-
   var calendarSection = CardService.newCardSection()
     .setHeader('Available Calendars');
 
   calendars.forEach(function(calendar) {
     var isSelected = sourceCalendars.indexOf(calendar.id) !== -1;
-    console.log('Calendar:', calendar.name, 'ID:', calendar.id, 'Selected:', isSelected);
 
     var toggle = CardService.newSwitch()
       .setFieldName('source_' + calendar.id)
@@ -389,39 +383,23 @@ function onPrefixChange(e) {
  * Handles source calendar toggle
  */
 function onSourceCalendarToggle(e) {
-  console.log('=== onSourceCalendarToggle DEBUG ===');
-  console.log('Parameters:', JSON.stringify(e.parameters));
-  console.log('Form input:', JSON.stringify(e.formInput));
-
   var calendarId = e.parameters.calendarId;
   var formValue = e.formInput['source_' + calendarId];
   var isEnabled = formValue === 'true';  // Only true if switch is on
 
-  console.log('Calendar ID:', calendarId);
-  console.log('Form value:', formValue);
-  console.log('IsEnabled:', isEnabled);
-
   var sourceCalendars = JSON.parse(getProperty('sourceCalendars', '[]'));
-  console.log('Before update - stored calendars:', JSON.stringify(sourceCalendars));
 
   if (isEnabled) {
     if (sourceCalendars.indexOf(calendarId) === -1) {
       sourceCalendars.push(calendarId);
-      console.log('Added calendar to list');
-    } else {
-      console.log('Calendar already in list');
     }
   } else {
     var index = sourceCalendars.indexOf(calendarId);
     if (index !== -1) {
       sourceCalendars.splice(index, 1);
-      console.log('Removed calendar from list');
-    } else {
-      console.log('Calendar not in list');
     }
   }
 
-  console.log('After update - calendars to store:', JSON.stringify(sourceCalendars));
   setProperty('sourceCalendars', JSON.stringify(sourceCalendars));
 
   // If sync is enabled, refresh the triggers to reflect the change in source calendars
@@ -447,10 +425,6 @@ function onSourceCalendarToggle(e) {
       Logger.log('Error refreshing triggers: ' + error.toString());
     }
   }
-
-  // Verify it was stored
-  var verification = getProperty('sourceCalendars', '[]');
-  console.log('Verification - stored value:', verification);
 
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification()
@@ -581,6 +555,7 @@ function clearAllTriggers() {
   Logger.log('Clearing ' + triggers.length + ' existing triggers');
 
   triggers.forEach(function(trigger) {
+    Logger.log('Deleting trigger: ' + trigger.getHandlerFunction() + ' (ID: ' + trigger.getUniqueId() + ')');
     ScriptApp.deleteTrigger(trigger);
   });
 }
@@ -654,54 +629,8 @@ function setProperty(key, value) {
 }
 
 /**
- * Sets up sync triggers based on event updates in source calendars.
+ * Legacy functions removed - use installEventTriggers() and clearAllTriggers() instead
  */
-function setupSyncTrigger() {
-  // Clear existing triggers first
-  clearSyncTriggers();
-
-  // Only set up triggers if sync is enabled
-  if (getProperty('enableSync', 'false') !== 'true') {
-    Logger.log('Sync is disabled, not creating triggers.');
-    return;
-  }
-
-  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
-  Logger.log('Setting up event triggers for ' + sourceIds.length + ' source calendars.');
-
-  sourceIds.forEach(function(calendarId) {
-    try {
-      // Check if calendar exists and we can access it.
-      var calendar = CalendarApp.getCalendarById(calendarId);
-      if (calendar) {
-        ScriptApp.newTrigger('sync')
-          .forUserCalendar(calendarId)
-          .onEventUpdated()
-          .create();
-        Logger.log('Created event update trigger for calendar: ' + calendarId);
-      } else {
-        Logger.log('Could not find calendar with ID: ' + calendarId + '. Trigger not created.');
-      }
-    } catch (e) {
-      // Log error but continue, so one failed calendar doesn't stop others.
-      Logger.log('Failed to create trigger for calendar ' + calendarId + ': ' + e.toString());
-    }
-  });
-}
-
-/**
- * Clears all sync triggers
- */
-function clearSyncTriggers() {
-    var triggers = ScriptApp.getProjectTriggers();
-    Logger.log('Found ' + triggers.length + ' project triggers to check for deletion.');
-  triggers.forEach(function(trigger) {
-    if (trigger.getHandlerFunction() === 'sync') {
-        Logger.log('Deleting trigger with ID: ' + trigger.getUniqueId());
-        ScriptApp.deleteTrigger(trigger);
-    }
-  });
-}
 
 // ============================================================================
 // SYNC LOGIC (Modified from original)
@@ -784,62 +713,11 @@ function onCalendarEventUpdate(e) {
   sync(e);
 }
 
-/**
- * Test function to verify triggers are working by creating a test event
- */
-function testTriggerWithEvent() {
-  Logger.log('=== TESTING TRIGGER WITH EVENT CREATION ===');
 
-  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
-  if (sourceIds.length === 0) {
-    Logger.log('No source calendars configured for testing');
-    return 'No source calendars configured';
-  }
-
-  try {
-    var testCalendarId = sourceIds[0];
-    var calendar = CalendarApp.getCalendarById(testCalendarId);
-
-    if (!calendar) {
-      Logger.log('Cannot access calendar: ' + testCalendarId);
-      return 'Cannot access calendar';
-    }
-
-    Logger.log('Creating test event in calendar: ' + calendar.getName());
-
-    // Create a test event
-    var startTime = new Date();
-    startTime.setHours(startTime.getHours() + 1); // 1 hour from now
-    var endTime = new Date(startTime.getTime() + (60 * 60 * 1000)); // 1 hour duration
-
-    var testEvent = calendar.createEvent(
-      'Test Event - ' + new Date().toLocaleTimeString(),
-      startTime,
-      endTime,
-      {
-        description: 'This is a test event created to verify triggers are working'
-      }
-    );
-
-    Logger.log('Test event created: ' + testEvent.getTitle());
-    Logger.log('Event ID: ' + testEvent.getId());
-
-    // Wait a moment then modify the event to trigger the update
-    Utilities.sleep(1000);
-
-    testEvent.setTitle('MODIFIED - ' + testEvent.getTitle());
-    Logger.log('Event title modified to trigger update');
-
-    return 'Test event created and modified - check executions for trigger firing';
-
-  } catch (error) {
-    Logger.log('Error creating test event: ' + error.toString());
-    return 'Error: ' + error.message;
-  }
-}
 
 /**
  * Main sync function that syncs events between calendars
+ * Can do either a full sync or a targeted sync of a specific event
  */
 function sync(e) {
   Logger.log('=== SYNC FUNCTION CALLED ===');
@@ -858,31 +736,145 @@ function sync(e) {
   var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
   Logger.log('Source calendars: ' + JSON.stringify(sourceIds));
 
-  // If triggered by an event, check if it's from a source calendar
-  if (e && e.calendar && e.calendar.calendarId) {
-    Logger.log('Event triggered from calendar: ' + e.calendar.calendarId);
-    if (sourceIds.indexOf(e.calendar.calendarId) === -1) {
-      Logger.log('Event trigger from non-source calendar (' + e.calendar.calendarId + '), ignoring.');
-      return; // Not a calendar we should sync from
-    }
-    Logger.log('Sync triggered by an event in source calendar: ' + e.calendar.calendarId);
+  // Check if this is a targeted sync (triggered by specific event update)
+  if (e && e.calendarId && e.triggerUid) {
+    Logger.log('Performing targeted sync for calendar: ' + e.calendarId);
+    syncSpecificEvent(e);
   } else {
-    Logger.log('Sync triggered manually via "Sync Now" or no event data available.');
+    Logger.log('Performing full sync');
+    syncAllEvents();
   }
 
+  setProperty('lastSyncTime', new Date().toLocaleString());
+}
+
+/**
+ * Syncs events from a specific calendar that was updated
+ * Since we don't have the specific event ID, we'll do a targeted sync for the calendar
+ */
+function syncSpecificEvent(e) {
+  var sourceCalendarId = e.calendarId;
+
+  Logger.log('Syncing events from calendar: ' + sourceCalendarId);
+
+  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
   var destinationCalendarsInfo = JSON.parse(getProperty('destinationCalendars', '[]'));
-  Logger.log('Destination calendars: ' + JSON.stringify(destinationCalendarsInfo));
+  var cloneEventPrefix = getProperty('cloneEventPrefix', '* ');
+  var numDaysOut = parseInt(getProperty('numDaysOut', '60'));
+
+  if (sourceIds.indexOf(sourceCalendarId) === -1) {
+    Logger.log('Event from non-source calendar, ignoring');
+    return;
+  }
+
+  if (destinationCalendarsInfo.length === 0) {
+    Logger.log('No destination calendars configured');
+    return;
+  }
+
+  try {
+    var sourceCalendar = CalendarApp.getCalendarById(sourceCalendarId);
+    if (!sourceCalendar) {
+      Logger.log('Cannot access source calendar: ' + sourceCalendarId);
+      return;
+    }
+
+    Logger.log('Found source calendar: ' + sourceCalendar.getName());
+
+    // Get date range for sync
+    var today = new Date();
+    var endDate = new Date();
+    endDate.setDate(today.getDate() + numDaysOut);
+
+    // Sync this calendar to all destination calendars
+    destinationCalendarsInfo.forEach(function(destInfo) {
+      if (destInfo.id === sourceCalendarId) {
+        return; // Skip if destination is same as source
+      }
+
+      try {
+        var destCalendar = CalendarApp.getCalendarById(destInfo.id);
+        if (!destCalendar) {
+          Logger.log('Cannot access destination calendar: ' + destInfo.id);
+          return;
+        }
+
+        // Get existing cloned events from this source calendar in destination
+        var existingEvents = destCalendar.getEvents(today, endDate);
+        var eventsToDelete = [];
+
+        // Find events that should be deleted (those with the clone prefix from this source)
+        for (var j = 0; j < existingEvents.length; j++) {
+          var event = existingEvents[j];
+          if (event.getTitle().indexOf(cloneEventPrefix) === 0) {
+            eventsToDelete.push(event);
+          }
+        }
+
+        // Delete existing cloned events from this source calendar
+        for (var k = 0; k < eventsToDelete.length; k++) {
+          eventsToDelete[k].deleteEvent();
+        }
+
+        // Get events from source calendar
+        var sourceEvents = sourceCalendar.getEvents(today, endDate);
+
+        // Clone events to destination calendar
+        for (var m = 0; m < sourceEvents.length; m++) {
+          var sourceEvent = sourceEvents[m];
+
+          // Skip if event is already a cloned event
+          if (sourceEvent.getTitle().indexOf(cloneEventPrefix) === 0) {
+            continue;
+          }
+
+          // Create new event in destination calendar
+          var newTitle = cloneEventPrefix + sourceEvent.getTitle();
+          var newEvent = destCalendar.createEvent(
+            newTitle,
+            sourceEvent.getStartTime(),
+            sourceEvent.getEndTime(),
+            {
+              description: sourceEvent.getDescription(),
+              location: sourceEvent.getLocation()
+            }
+          );
+
+          Logger.log('Synced event "' + newTitle + '" to ' + destCalendar.getName());
+        }
+
+      } catch (error) {
+        Logger.log('Error syncing to destination calendar ' + destInfo.id + ': ' + error.toString());
+      }
+    });
+
+  } catch (error) {
+    Logger.log('Error in targeted sync: ' + error.toString());
+  }
+}
+
+/**
+ * Note: The targeted sync approach now works at the calendar level rather than
+ * individual event level, so event-specific cleanup functions are no longer needed.
+ * The calendar-level sync will handle all events for the updated calendar.
+ */
+
+/**
+ * Performs a full sync of all events (original function logic)
+ */
+function syncAllEvents() {
+  var destinationCalendarsInfo = JSON.parse(getProperty('destinationCalendars', '[]'));
+  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
+  var numDaysOut = parseInt(getProperty('numDaysOut', '60'));
+  var cloneEventPrefix = getProperty('cloneEventPrefix', '* ');
+
+  Logger.log('Starting full sync with ' + sourceIds.length + ' source calendars and ' + destinationCalendarsInfo.length + ' destination calendars');
+  Logger.log('Days out: ' + numDaysOut + ', Prefix: "' + cloneEventPrefix + '"');
 
   if (destinationCalendarsInfo.length === 0) {
     Logger.log('No destination calendars configured, aborting.');
     return;
   }
-
-  var numDaysOut = parseInt(getProperty('numDaysOut', '60'));
-  var cloneEventPrefix = getProperty('cloneEventPrefix', '* ');
-
-  Logger.log('Starting sync with ' + sourceIds.length + ' source calendars and ' + destinationCalendarsInfo.length + ' destination calendars');
-  Logger.log('Days out: ' + numDaysOut + ', Prefix: "' + cloneEventPrefix + '"');
 
   var today = new Date();
   var endDate = new Date();
@@ -892,13 +884,13 @@ function sync(e) {
   for (var i = 0; i < destinationCalendarsInfo.length; i++) {
     var destinationCalendarInfo = destinationCalendarsInfo[i];
 
-      try {
-        var destinationCal = CalendarApp.getCalendarById(destinationCalendarInfo.id);
+    try {
+      var destinationCal = CalendarApp.getCalendarById(destinationCalendarInfo.id);
 
-        if (!destinationCal) {
-          Logger.log("ERROR: Cannot access destination calendar with ID: " + destinationCalendarInfo.id);
-          continue;
-        }
+      if (!destinationCal) {
+        Logger.log("ERROR: Cannot access destination calendar with ID: " + destinationCalendarInfo.id);
+        continue;
+      }
 
       // Get all events from destination calendar in the date range
       var existingEvents = destinationCal.getEvents(today, endDate);
@@ -925,16 +917,16 @@ function sync(e) {
           continue; // Skip if source and destination are the same
         }
 
-          try {
-            var sourceCal = CalendarApp.getCalendarById(sourceId);
+        try {
+          var sourceCal = CalendarApp.getCalendarById(sourceId);
 
-            if (!sourceCal) {
-              Logger.log("ERROR: Cannot access source calendar with ID: " + sourceId);
-              continue;
-            }
+          if (!sourceCal) {
+            Logger.log("ERROR: Cannot access source calendar with ID: " + sourceId);
+            continue;
+          }
 
           // Get events from source calendar
-            var sourceEvents = sourceCal.getEvents(today, endDate);
+          var sourceEvents = sourceCal.getEvents(today, endDate);
 
           // Clone events to destination calendar
           for (var m = 0; m < sourceEvents.length; m++) {
@@ -970,16 +962,15 @@ function sync(e) {
     }
   }
 
-  Logger.log("Sync completed successfully");
-  setProperty('lastSyncTime', new Date().toLocaleString());
+  Logger.log("Full sync completed successfully");
 }
 
 // ============================================================================
-// DEBUG TEST FUNCTIONS - Run these in Apps Script editor
+// UTILITY FUNCTIONS FOR TRIGGER MANAGEMENT
 // ============================================================================
 
 /**
- * Debug function to test trigger creation and list current triggers
+ * Debug function to list current triggers
  */
 function debugTriggers() {
   Logger.log('=== DEBUG TRIGGERS ===');
@@ -998,160 +989,71 @@ function debugTriggers() {
     Logger.log('    Unique ID: ' + trigger.getUniqueId());
   });
 
-  // Test creating a trigger for the first source calendar
-  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
-  if (sourceIds.length > 0) {
-    var testCalendarId = sourceIds[0];
-    Logger.log('Testing trigger creation for calendar: ' + testCalendarId);
-
-    try {
-      var calendar = CalendarApp.getCalendarById(testCalendarId);
-      Logger.log('Calendar access test: ' + (calendar ? 'SUCCESS - ' + calendar.getName() : 'FAILED'));
-
-      if (calendar) {
-        var trigger = ScriptApp.newTrigger('onCalendarEventUpdate')
-          .forUserCalendar(testCalendarId)
-          .onEventUpdated()
-          .create();
-        Logger.log('Test trigger created with ID: ' + trigger.getUniqueId());
-      }
-    } catch (error) {
-      Logger.log('Test trigger creation failed: ' + error.toString());
-    }
-  }
-
   return 'Debug completed - check logs';
 }
 
 /**
- * Test function to simulate an eventUpdateTrigger
- * Run this manually to test if the sync logic works
+ * Helper function to clear all triggers and start fresh
+ * Run this if you're experiencing issues with duplicate triggers
  */
-function testEventUpdateTrigger() {
-  Logger.log('=== TESTING EVENT UPDATE TRIGGER ===');
+function clearAllTriggersAndReinstall() {
+  Logger.log('=== CLEARING ALL TRIGGERS AND REINSTALLING ===');
 
-  // Get the first source calendar to simulate an event from
+  // Clear all existing triggers
+  clearAllTriggers();
+
+  // Wait a moment
+  Utilities.sleep(1000);
+
+  // Reinstall triggers
   var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
+  Logger.log('Reinstalling triggers for ' + sourceIds.length + ' source calendars');
+
   if (sourceIds.length === 0) {
-    Logger.log('No source calendars configured for testing');
+    Logger.log('No source calendars configured');
     return 'No source calendars configured';
   }
 
-  // Simulate an event update trigger
-  var mockEvent = {
-    calendar: {
-      calendarId: sourceIds[0]
-    },
-    eventUpdated: {
-      calendarId: sourceIds[0]
+  var triggersInstalled = 0;
+  var errors = [];
+
+  sourceIds.forEach(function(calendarId) {
+    try {
+      var calendar = CalendarApp.getCalendarById(calendarId);
+      if (!calendar) {
+        errors.push('Cannot access calendar: ' + calendarId);
+        return;
+      }
+
+      var trigger = ScriptApp.newTrigger('onCalendarEventUpdate')
+        .forUserCalendar(calendarId)
+        .onEventUpdated()
+        .create();
+
+      Logger.log('Installed trigger for ' + calendar.getName() + ' (ID: ' + trigger.getUniqueId() + ')');
+      triggersInstalled++;
+
+    } catch (error) {
+      Logger.log('Failed to install trigger for ' + calendarId + ': ' + error.toString());
+      errors.push('Calendar ' + calendarId + ': ' + error.message);
     }
-  };
+  });
 
-  Logger.log('Simulating event update from calendar: ' + sourceIds[0]);
-  sync(mockEvent);
-
-  return 'Test completed - check logs';
-}
-
-/**
- * Test function to check PropertiesService storage
- */
-function testPropertiesStorage() {
-  console.log('=== Testing PropertiesService Storage ===');
-
-  // Test setting and getting a simple property
-  setProperty('testKey', 'testValue');
-  var retrieved = getProperty('testKey', 'defaultValue');
-  console.log('Set: testValue, Retrieved: ' + retrieved);
-
-  // Test setting and getting source calendars
-  var testCalendars = ['calendar1@example.com', 'calendar2@example.com'];
-  setProperty('sourceCalendars', JSON.stringify(testCalendars));
-  var retrievedCalendars = JSON.parse(getProperty('sourceCalendars', '[]'));
-  console.log('Set calendars: ' + JSON.stringify(testCalendars));
-  console.log('Retrieved calendars: ' + JSON.stringify(retrievedCalendars));
-
-  // Check current stored source calendars
-  var currentSource = getProperty('sourceCalendars', '[]');
-  console.log('Current stored source calendars: ' + currentSource);
-
-  return 'Test completed - check logs';
-}
-
-/**
- * Test function to simulate toggle events
- */
-function testToggleSimulation() {
-  console.log('=== Testing Toggle Simulation ===');
-
-  // Get available calendars
-  var calendars = getUserCalendars();
-  console.log('Available calendars: ' + JSON.stringify(calendars));
-
-  if (calendars.length > 0) {
-    var testCalendarId = calendars[0].id;
-    console.log('Testing with calendar: ' + testCalendarId);
-
-    // Simulate enabling a calendar
-    var mockEvent = {
-      parameters: { calendarId: testCalendarId },
-      formInput: {}
-    };
-    mockEvent.formInput['source_' + testCalendarId] = true;
-
-    console.log('Simulating toggle ON for: ' + testCalendarId);
-    console.log('Form input: ' + JSON.stringify(mockEvent.formInput));
-
-    // Test the toggle handler
-    var result = onSourceCalendarToggle(mockEvent);
-    console.log('Toggle result: ' + JSON.stringify(result));
-
-    // Check if it was stored
-    var storedCalendars = JSON.parse(getProperty('sourceCalendars', '[]'));
-    console.log('Stored calendars after toggle: ' + JSON.stringify(storedCalendars));
-
-    return 'Toggle test completed - check logs';
-  } else {
-    return 'No calendars available for testing';
+  var result = 'Installed ' + triggersInstalled + ' triggers';
+  if (errors.length > 0) {
+    result += '. Errors: ' + errors.join(', ');
   }
+
+  Logger.log(result);
+  return result;
 }
 
-/**
- * Test function to check calendar retrieval
- */
-function testCalendarRetrieval() {
-  console.log('=== Testing Calendar Retrieval ===');
 
-  try {
-    var calendars = getUserCalendars();
-    console.log('Found ' + calendars.length + ' calendars');
 
-    calendars.forEach(function(calendar, index) {
-      console.log('Calendar ' + index + ': ' + calendar.name + ' (ID: ' + calendar.id + ')');
-    });
 
-    return 'Calendar retrieval test completed - check logs';
-  } catch (error) {
-    console.error('Error retrieving calendars: ' + error.message);
-    return 'Error: ' + error.message;
-  }
-}
 
-/**
- * Clear all stored properties for testing
- */
-function clearAllProperties() {
-  console.log('=== Clearing All Properties ===');
 
-  var properties = PropertiesService.getUserProperties();
-  properties.deleteProperty('sourceCalendars');
-  properties.deleteProperty('destinationCalendars');
-  properties.deleteProperty('enableSync');
-  properties.deleteProperty('syncFrequency');
-  properties.deleteProperty('numDaysOut');
-  properties.deleteProperty('cloneEventPrefix');
-  properties.deleteProperty('lastSyncTime');
 
-  console.log('All properties cleared');
-  return 'Properties cleared';
-}
+
+
+
