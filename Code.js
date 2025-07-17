@@ -524,6 +524,20 @@ function installEventTriggers() {
     Logger.log('Total triggers installed: ' + triggersInstalled);
     Logger.log('Errors encountered: ' + JSON.stringify(errors));
 
+    // ------------------------------------------------------------------
+    // Create a backup hourly trigger to catch any missed updates
+    // ------------------------------------------------------------------
+    try {
+      ScriptApp.newTrigger('sync')
+        .timeBased()
+        .everyHours(1)
+        .create();
+      Logger.log('Hourly backup trigger installed successfully');
+    } catch (err) {
+      Logger.log('Failed to install hourly backup trigger: ' + err.toString());
+      errors.push('Hourly trigger: ' + err.message);
+    }
+
     var message = 'Installed ' + triggersInstalled + ' event triggers';
     if (errors.length > 0) {
       message += '. Errors: ' + errors.join(', ');
@@ -713,39 +727,52 @@ function onCalendarEventUpdate(e) {
   sync(e);
 }
 
-
-
 /**
  * Main sync function that syncs events between calendars
  * Can do either a full sync or a targeted sync of a specific event
  */
 function sync(e) {
-  Logger.log('=== SYNC FUNCTION CALLED ===');
-  Logger.log('Event object: ' + JSON.stringify(e));
-  Logger.log('Current time: ' + new Date().toISOString());
-
-  // Check if sync is enabled
-  var syncEnabled = getProperty('enableSync', 'false');
-  Logger.log('Sync enabled setting: ' + syncEnabled);
-
-  if (syncEnabled !== 'true') {
-    Logger.log('Sync is disabled, aborting.');
-    return; // Exit if sync is not enabled
+  // Check if a sync is already in progress
+  var syncInProgress = getProperty('syncInProgress', 'false');
+  if (syncInProgress === 'true') {
+    Logger.log('Another sync is already in progress – aborting this execution to avoid loops');
+    return;
   }
 
-  var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
-  Logger.log('Source calendars: ' + JSON.stringify(sourceIds));
+  // Set the sync in progress flag
+  setProperty('syncInProgress', 'true');
 
-  // Check if this is a targeted sync (triggered by specific event update)
-  if (e && e.calendarId && e.triggerUid) {
-    Logger.log('Performing targeted sync for calendar: ' + e.calendarId);
-    syncSpecificEvent(e);
-  } else {
-    Logger.log('Performing full sync');
-    syncAllEvents();
+  try {
+    Logger.log('=== SYNC FUNCTION CALLED ===');
+    Logger.log('Event object: ' + JSON.stringify(e));
+    Logger.log('Current time: ' + new Date().toISOString());
+
+    // Check if sync is enabled
+    var syncEnabled = getProperty('enableSync', 'false');
+    Logger.log('Sync enabled setting: ' + syncEnabled);
+
+    if (syncEnabled !== 'true') {
+      Logger.log('Sync is disabled, aborting.');
+      return; // Exit if sync is not enabled
+    }
+
+    var sourceIds = JSON.parse(getProperty('sourceCalendars', '[]'));
+    Logger.log('Source calendars: ' + JSON.stringify(sourceIds));
+
+    // Check if this is a targeted sync (triggered by specific event update)
+    if (e && e.calendarId && e.triggerUid) {
+      Logger.log('Performing targeted sync for calendar: ' + e.calendarId);
+      syncSpecificEvent(e);
+    } else {
+      Logger.log('Performing full sync');
+      syncAllEvents();
+    }
+
+    setProperty('lastSyncTime', new Date().toLocaleString());
+  } finally {
+    // Always clear the sync in progress flag
+    setProperty('syncInProgress', 'false');
   }
-
-  setProperty('lastSyncTime', new Date().toLocaleString());
 }
 
 /**
